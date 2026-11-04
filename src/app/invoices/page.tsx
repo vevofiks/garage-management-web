@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { FileTextIcon } from "lucide-react";
 import { apiClient, ApiError } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
 import { formatCurrency, formatDate } from "@/lib/format";
@@ -114,13 +115,24 @@ export default function InvoicesPage() {
       <PageHeader
         title="Invoices"
         actions={
-          <Button nativeButton={false} render={<Link href="/invoices/new">New Invoice</Link>} />
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              nativeButton={false}
+              render={
+                <Link href="/invoices/statement">
+                  <FileTextIcon className="size-4" /> Monthly Statement
+                </Link>
+              }
+            />
+            <Button nativeButton={false} render={<Link href="/invoices/new">New Invoice</Link>} />
+          </div>
         }
       />
 
       <div className="flex gap-3">
         <Input
-          placeholder="Search by customer, invoice, vehicle number, or model…"
+          placeholder="Search by invoice # (e.g. INV-73), customer, vehicle, or date…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="max-w-md"
@@ -138,18 +150,18 @@ export default function InvoicesPage() {
         </Select>
       </div>
 
-      <div className="rounded-md border">
+      <div className="rounded-md border bg-card">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead className="w-12">#</TableHead>
-              <TableHead>Invoice</TableHead>
+              <TableHead>Invoice #</TableHead>
+              <TableHead>Date</TableHead>
               <TableHead>Customer</TableHead>
               <TableHead>Vehicle</TableHead>
               <TableHead>Total</TableHead>
               <TableHead>Paid</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead>Date</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -169,33 +181,35 @@ export default function InvoicesPage() {
               invoices?.map((invoice, index) => (
                 <TableRow
                   key={invoice.id}
-                  className="cursor-pointer"
+                  className="cursor-pointer hover:bg-muted/50"
                   onClick={() => router.push(`/invoices/${invoice.id}`)}
                 >
                   <TableCell className="text-muted-foreground text-xs font-medium">
                     {(page - 1) * 10 + index + 1}
                   </TableCell>
-                  <TableCell className="font-medium">
+                  <TableCell className="font-semibold text-foreground">
                     <Link
                       href={`/invoices/${invoice.id}`}
-                      className="hover:underline"
+                      className="hover:underline font-mono text-sm"
                       onClick={(e) => e.stopPropagation()}
                     >
                       INV-{invoice.id}
                     </Link>
                   </TableCell>
-                  <TableCell>{invoice.customer_name}</TableCell>
-                  <TableCell>
+                  <TableCell className="whitespace-nowrap text-sm text-muted-foreground font-medium">
+                    {formatDate(invoice.created_at)}
+                  </TableCell>
+                  <TableCell className="font-medium text-foreground">{invoice.customer_name}</TableCell>
+                  <TableCell className="text-muted-foreground">
                     {[invoice.vehicle_number, invoice.vehicle_model].filter(Boolean).join(" — ") || "—"}
                   </TableCell>
-                  <TableCell>{formatCurrency(invoice.total_amount)}</TableCell>
-                  <TableCell>{formatCurrency(invoice.paid_amount)}</TableCell>
+                  <TableCell className="font-semibold text-foreground">{formatCurrency(invoice.total_amount)}</TableCell>
+                  <TableCell className="text-emerald-700 font-medium">{formatCurrency(invoice.paid_amount)}</TableCell>
                   <TableCell>
                     <Badge variant={STATUS_BADGE[invoice.payment_status]}>
                       {invoice.payment_status}
                     </Badge>
                   </TableCell>
-                  <TableCell>{formatDate(invoice.created_at)}</TableCell>
                   <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                     <AlertDialog>
                       <AlertDialogTrigger

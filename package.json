@@ -11,7 +11,10 @@
     "reset-password": "node scripts/reset-admin-password.js",
     "lint": "eslint"
   },
-  "dependencies": {},
+  "dependencies": {
+    "html-to-image": "^1.11.13",
+    "jspdf": "^4.2.1"
+  },
   "devDependencies": {
     "@base-ui/react": "^1.7.0",
     "@hookform/resolvers": "^5.9.1",

@@ -7,7 +7,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { PencilIcon, TrashIcon, PlusIcon } from "lucide-react";
+import { PencilIcon, TrashIcon, PlusIcon, FileTextIcon } from "lucide-react";
 import { apiClient, ApiError } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
 import { formatCurrency, formatDate } from "@/lib/format";
@@ -99,7 +99,7 @@ function VehicleForm({
         <Button type="submit" size="sm" disabled={isSubmitting}>
           Save
         </Button>
-        <Button type="button" variant="outline" size="sm" onClick={onCancel} disabled={isSubmitting}>
+        <Button type="button" variant="outline" size="sm" onClick={onCancel}>
           Cancel
         </Button>
       </div>
@@ -112,6 +112,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
   const id = Number(idParam);
   const router = useRouter();
   const queryClient = useQueryClient();
+
   const [addingVehicle, setAddingVehicle] = useState(false);
   const [editingVehicleId, setEditingVehicleId] = useState<number | null>(null);
 
@@ -120,6 +121,11 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
     queryFn: () => apiClient.get<CustomerDetail>(`/api/customers/${id}`),
   });
 
+  const invalidateCustomer = () => {
+    queryClient.invalidateQueries({ queryKey: queryKeys.customers.detail(id) });
+    queryClient.invalidateQueries({ queryKey: queryKeys.customers.all });
+  };
+
   const deleteMutation = useMutation({
     mutationFn: () => apiClient.delete(`/api/customers/${id}`),
     onSuccess: () => {
@@ -127,23 +133,15 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
       toast.success("Customer deleted");
       router.push("/customers");
     },
-    onError: (error: ApiError) => {
-      toast.error(error.message || "Failed to delete customer");
-    },
+    onError: (error: ApiError) => toast.error(error.message || "Failed to delete customer"),
   });
-
-  const invalidateCustomer = () => {
-    queryClient.invalidateQueries({ queryKey: queryKeys.customers.detail(id) });
-    queryClient.invalidateQueries({ queryKey: queryKeys.customers.vehicles(id) });
-    queryClient.invalidateQueries({ queryKey: queryKeys.customers.list("") });
-  };
 
   const addVehicleMutation = useMutation({
     mutationFn: (data: VehicleFormData) => apiClient.post(`/api/customers/${id}/vehicles`, data),
     onSuccess: () => {
       invalidateCustomer();
-      toast.success("Vehicle added");
       setAddingVehicle(false);
+      toast.success("Vehicle added");
     },
     onError: (error: ApiError) => toast.error(error.message || "Failed to add vehicle"),
   });
@@ -153,8 +151,8 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
       apiClient.patch(`/api/vehicles/${vehicleId}`, data),
     onSuccess: () => {
       invalidateCustomer();
-      toast.success("Vehicle updated");
       setEditingVehicleId(null);
+      toast.success("Vehicle updated");
     },
     onError: (error: ApiError) => toast.error(error.message || "Failed to update vehicle"),
   });
@@ -184,7 +182,16 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
         backHref="/customers"
         backLabel="Back to customers"
         actions={
-          <>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              nativeButton={false}
+              render={
+                <Link href={`/invoices/statement?customer_id=${id}`}>
+                  <FileTextIcon className="size-4" /> Monthly Statement
+                </Link>
+              }
+            />
             <Button
               variant="outline"
               nativeButton={false}
@@ -208,7 +215,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
-          </>
+          </div>
         }
       />
 
@@ -326,8 +333,18 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
       </Card>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Invoice History</CardTitle>
+          <Button
+            variant="outline"
+            size="sm"
+            nativeButton={false}
+            render={
+              <Link href={`/invoices/statement?customer_id=${id}`}>
+                <FileTextIcon className="size-3.5" /> Monthly Statement
+              </Link>
+            }
+          />
         </CardHeader>
         <CardContent>
           {customer.invoices.length === 0 ? (

@@ -13,6 +13,7 @@ export const queryKeys = {
     list: (q?: string, page = 1) => ["customers", "list", q ?? "", page] as const,
     detail: (id: number) => ["customers", "detail", id] as const,
     vehicles: (id: number) => ["customers", "vehicles", id] as const,
+    statement: (id: number, month?: string) => ["customers", "statement", id, month ?? ""] as const,
   },
   invoices: {
     all: ["invoices"] as const,
@@ -20,6 +21,7 @@ export const queryKeys = {
       filters: { q?: string; from?: string; to?: string; customerId?: number; status?: string; page?: number } = {}
     ) => ["invoices", "list", filters] as const,
     detail: (id: number) => ["invoices", "detail", id] as const,
+    statement: (customerId: number, month?: string) => ["invoices", "statement", customerId, month ?? ""] as const,
   },
   expenses: {
     all: ["expenses"] as const,

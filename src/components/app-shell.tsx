@@ -113,8 +113,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   });
 
   return (
-    <div className="flex min-h-screen">
-      <aside className="w-64 shrink-0 border-r border-border bg-sidebar text-sidebar-foreground">
+    <div className="flex min-h-screen print:block">
+      <aside className="w-64 shrink-0 border-r border-border bg-sidebar text-sidebar-foreground print:hidden">
         <div className="flex flex-col items-center gap-2 border-b px-4 py-5">
           <Image
             src="/app-logo.png"
@@ -145,8 +145,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           ))}
         </nav>
       </aside>
-      <div className="flex flex-1 flex-col">
-        <header className="flex h-12 items-center justify-end gap-3 border-b border-border px-4 text-sm text-muted-foreground">
+      <div className="flex flex-1 flex-col print:block">
+        <header className="flex h-12 items-center justify-end gap-3 border-b border-border px-4 text-sm text-muted-foreground print:hidden">
           <div className="flex items-center gap-3">
             {user && (
               <span>
@@ -161,8 +161,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             )}
           </div>
         </header>
-        <main className="flex-1 p-6">
-          <div className="mx-auto w-full max-w-7xl">{children}</div>
+        <main className="flex-1 p-6 print:p-0 print:m-0 print:w-full">
+          <div className="mx-auto w-full max-w-7xl print:max-w-none print:w-full print:m-0 print:p-0">
+            {children}
+          </div>
         </main>
       </div>
     </div>

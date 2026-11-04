@@ -6,6 +6,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { Loader2Icon } from "lucide-react";
 import { apiClient, ApiError } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
 import {
@@ -32,12 +33,19 @@ import { InvoiceItemsField } from "../_components/invoice-items-field";
 
 type Vehicle = { id: number; vehicle_number: string | null; vehicle_model: string | null };
 
+function getTodayDateString(): string {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 /**
  * The only billing entry point in the app: pick a customer (and one of
- * their vehicles, if any are on file), add line items — from the
- * predefined-services catalog, or typed in directly for anything extra —
- * and create the invoice. There is no separate Services module anymore;
- * the invoice itself is the record of the work done.
+ * their vehicles, if any are on file), choose the invoice date, add line items —
+ * from the predefined-services catalog, or typed in directly for anything extra —
+ * and create the invoice.
  */
 export default function NewInvoicePage() {
   const router = useRouter();
@@ -45,9 +53,7 @@ export default function NewInvoicePage() {
   const queryClient = useQueryClient();
   const [selectedCustomer, setSelectedCustomer] = useState<SelectedCustomer | null>(null);
 
-  // Arriving from a "Create Invoice" action on a specific customer (e.g. the
-  // dashboard's Recent Customers row) — skip the picker and go straight to
-  // that customer instead of making them search for who they just clicked.
+  // Arriving from a "Create Invoice" action on a specific customer
   const prefillCustomerId = searchParams.get("customerId");
   const { data: prefillCustomer } = useQuery<SelectedCustomer>({
     queryKey: queryKeys.customers.detail(Number(prefillCustomerId)),
@@ -67,6 +73,7 @@ export default function NewInvoicePage() {
     defaultValues: {
       customer_id: 0,
       vehicle_id: null,
+      created_at: getTodayDateString(),
       notes: "",
       items: [{ description: "", type: "labor", amount: 0 }],
       paid_amount: 0,
@@ -96,8 +103,6 @@ export default function NewInvoicePage() {
     enabled: !!selectedCustomer,
   });
 
-  // A customer with exactly one vehicle on file doesn't need to pick it —
-  // preselect it so the common case stays a one-step flow.
   useEffect(() => {
     if (vehicles?.length === 1) {
       setValue("vehicle_id", vehicles[0].id);
@@ -108,15 +113,21 @@ export default function NewInvoicePage() {
     mutationFn: (data: CreateInvoiceInput) => apiClient.post<{ id: number }>("/api/invoices", data),
     onSuccess: (invoice) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.invoices.all });
-      queryClient.invalidateQueries({ queryKey: queryKeys.customers.detail(selectedCustomer!.id) });
+      if (selectedCustomer) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.customers.detail(selectedCustomer.id) });
+      }
       toast.success("Invoice created");
-      // Straight to the printable preview — editing (items, payment, etc.)
-      // happens later from the invoices list, not as a forced next step
-      // right after creating.
       router.push(`/invoices/${invoice.id}/print`);
     },
     onError: (error: ApiError) => toast.error(error.message || "Failed to create invoice"),
   });
+
+  const isFormLocked = isSubmitting || mutation.isPending;
+
+  const onSubmit = (data: CreateInvoiceInput) => {
+    if (isFormLocked) return;
+    mutation.mutate(data);
+  };
 
   const [cashAmount, setCashAmount] = useState<number | "">("");
   const [cardAmount, setCardAmount] = useState<number | "">("");
@@ -143,7 +154,7 @@ export default function NewInvoicePage() {
           <CardTitle>Invoice details</CardTitle>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit((data) => mutation.mutate(data))} className="space-y-6">
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
             <div className="space-y-2">
               <Label>Customer</Label>
               <CustomerPicker selected={selectedCustomer} onSelect={handleSelectCustomer} />
@@ -152,33 +163,55 @@ export default function NewInvoicePage() {
               )}
             </div>
 
-            {selectedCustomer && vehicles && vehicles.length > 0 && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="vehicle_id">Vehicle</Label>
-                <select
-                  id="vehicle_id"
-                  className="border-input flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs"
-                  value={watch("vehicle_id") ?? ""}
-                  onChange={(e) => setValue("vehicle_id", e.target.value ? Number(e.target.value) : null)}
-                  disabled={isSubmitting}
-                >
-                  <option value="">No specific vehicle</option>
-                  {vehicles.map((vehicle) => (
-                    <option key={vehicle.id} value={vehicle.id}>
-                      {[vehicle.vehicle_number, vehicle.vehicle_model].filter(Boolean).join(" — ") ||
-                        `Vehicle #${vehicle.id}`}
-                    </option>
-                  ))}
-                </select>
+                <Label htmlFor="created_at">Invoice Date</Label>
+                <Input
+                  id="created_at"
+                  type="date"
+                  {...register("created_at")}
+                  disabled={isFormLocked}
+                />
+                {errors.created_at && (
+                  <p className="text-sm text-destructive">{errors.created_at.message}</p>
+                )}
               </div>
-            )}
 
-            <div className="space-y-2">
-              <Label htmlFor="notes">Notes <span className="text-muted-foreground font-normal text-xs">(optional)</span></Label>
-              <Textarea id="notes" rows={3} {...register("notes")} disabled={isSubmitting} />
+              {selectedCustomer && vehicles && vehicles.length > 0 && (
+                <div className="space-y-2">
+                  <Label htmlFor="vehicle_id">Vehicle</Label>
+                  <select
+                    id="vehicle_id"
+                    className="border-input flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs"
+                    value={watch("vehicle_id") ?? ""}
+                    onChange={(e) => setValue("vehicle_id", e.target.value ? Number(e.target.value) : null)}
+                    disabled={isFormLocked}
+                  >
+                    <option value="">No specific vehicle</option>
+                    {vehicles.map((vehicle) => (
+                      <option key={vehicle.id} value={vehicle.id}>
+                        {[vehicle.vehicle_number, vehicle.vehicle_model].filter(Boolean).join(" — ") ||
+                          `Vehicle #${vehicle.id}`}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
 
-            <InvoiceItemsField control={control} register={register} setValue={setValue} errors={errors} />
+            <div className="space-y-2">
+              <Label htmlFor="notes">
+                Notes <span className="text-muted-foreground font-normal text-xs">(optional)</span>
+              </Label>
+              <Textarea id="notes" rows={3} {...register("notes")} disabled={isFormLocked} />
+            </div>
+
+            <InvoiceItemsField
+              control={control}
+              register={register}
+              setValue={setValue}
+              errors={errors}
+            />
 
             <div className="space-y-3 border-t pt-4">
               <h3 className="text-sm font-medium">Payment</h3>
@@ -201,7 +234,7 @@ export default function NewInvoicePage() {
                         }
                       }
                     }}
-                    disabled={isSubmitting}
+                    disabled={isFormLocked}
                   >
                     <SelectTrigger id="payment_method" className="w-full">
                       <SelectValue>{PAYMENT_METHOD_LABELS[selectedPaymentMethod]}</SelectValue>
@@ -226,7 +259,7 @@ export default function NewInvoicePage() {
                       {...register("paid_amount", {
                         setValueAs: (v) => (v === "" ? 0 : Number(v)),
                       })}
-                      disabled={isSubmitting}
+                      disabled={isFormLocked}
                     />
                     {errors.paid_amount && (
                       <p className="text-sm text-destructive">{errors.paid_amount.message}</p>
@@ -250,7 +283,7 @@ export default function NewInvoicePage() {
                             cardAmount
                           )
                         }
-                        disabled={isSubmitting}
+                        disabled={isFormLocked}
                       />
                     </div>
                     <div className="space-y-2">
@@ -267,7 +300,7 @@ export default function NewInvoicePage() {
                             e.target.value === "" ? "" : Number(e.target.value)
                           )
                         }
-                        disabled={isSubmitting}
+                        disabled={isFormLocked}
                       />
                     </div>
                   </>
@@ -280,7 +313,7 @@ export default function NewInvoicePage() {
                       id="payment_method_note"
                       placeholder="e.g. Half cash, half GPay"
                       {...register("payment_method_note")}
-                      disabled={isSubmitting}
+                      disabled={isFormLocked}
                     />
                     {errors.payment_method_note && (
                       <p className="text-sm text-destructive">{errors.payment_method_note.message}</p>
@@ -296,8 +329,19 @@ export default function NewInvoicePage() {
             </div>
 
             <div className="flex justify-end pt-2">
-              <Button type="submit" disabled={isSubmitting}>
-                {isSubmitting ? "Creating…" : "Create Invoice"}
+              <Button
+                type="submit"
+                disabled={isFormLocked}
+                className="min-w-32"
+              >
+                {mutation.isPending ? (
+                  <>
+                    <Loader2Icon className="size-4 mr-1.5 animate-spin" />
+                    Creating…
+                  </>
+                ) : (
+                  "Create Invoice"
+                )}
               </Button>
             </div>
           </form>

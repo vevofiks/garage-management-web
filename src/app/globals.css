@@ -144,6 +144,18 @@
 }
 
 @media print {
+  aside,
+  header {
+    display: none !important;
+  }
+
+  main {
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+  }
+
   :root,
   .dark {
     --background: oklch(1 0 0);

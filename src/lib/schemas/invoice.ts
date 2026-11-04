@@ -77,6 +77,7 @@ export const createInvoiceSchema = z
   .object({
     customer_id: z.number().int().positive('Select a customer'),
     vehicle_id: z.number().int().positive().nullable(),
+    created_at: z.string().trim().optional(),
     notes: z.string().trim().max(1000).optional(),
     items: z.array(invoiceItemSchema).min(1, 'Add at least one line item'),
     paid_amount: z.number().nonnegative('Paid amount must be 0 or more'),
@@ -109,6 +110,7 @@ export function normalizeCreateInvoiceInput(body: unknown) {
   return {
     customer_id: b.customer_id,
     vehicle_id: b.vehicle_id ?? null,
+    created_at: b.created_at ? String(b.created_at) : undefined,
     notes: b.notes ?? '',
     items: b.items ?? [],
     paid_amount: b.paid_amount ?? 0,
@@ -124,6 +126,7 @@ export function normalizeCreateInvoiceInput(body: unknown) {
  * must be present (enforced in the route handler, not here).
  */
 export const updateInvoiceSchema = z.object({
+  created_at: z.string().trim().optional(),
   items: z.array(invoiceItemSchema).min(1, 'Add at least one line item').optional(),
   paid_amount: z.number().nonnegative('Paid amount must be 0 or more').optional(),
   payment_method: paymentMethodSchema.optional(),

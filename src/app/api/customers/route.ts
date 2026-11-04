@@ -11,8 +11,8 @@ export const GET = withErrorHandling(async (req) => {
   const { page, pageSize, offset } = parsePagination(req.nextUrl.searchParams);
 
   const where = q
-    ? `WHERE customers.name LIKE ? OR customers.phone LIKE ?
-         OR customers.id IN (SELECT customer_id FROM vehicles WHERE vehicle_number LIKE ? OR vehicle_model LIKE ?)`
+    ? `WHERE customers.name ILIKE ? OR customers.phone ILIKE ?
+         OR customers.id IN (SELECT customer_id FROM vehicles WHERE vehicle_number ILIKE ? OR vehicle_model ILIKE ?)`
     : '';
   const whereParams = q ? [`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`] : [];
 
@@ -20,29 +20,49 @@ export const GET = withErrorHandling(async (req) => {
     .prepare(`SELECT COUNT(*)::int AS total FROM customers ${where}`)
     .get(...whereParams)) as { total: number };
 
-  // STRING_AGG rolls each customer's vehicle numbers and models into one string for
-  // the list/search view instead of joining rows into a cartesian product —
-  // the full per-vehicle detail lives on the customer detail page.
+  // Subqueries for vehicles and invoices avoid cartesian multiplication of spend/balance.
   const customers = await db
     .prepare(
-      `SELECT customers.id, customers.name, customers.phone, customers.created_at,
-              STRING_AGG(
-                CASE
-                  WHEN vehicles.vehicle_number IS NOT NULL AND vehicles.vehicle_number != '' AND vehicles.vehicle_model IS NOT NULL AND vehicles.vehicle_model != ''
-                    THEN vehicles.vehicle_number || ' (' || vehicles.vehicle_model || ')'
-                  WHEN vehicles.vehicle_number IS NOT NULL AND vehicles.vehicle_number != ''
-                    THEN vehicles.vehicle_number
-                  WHEN vehicles.vehicle_model IS NOT NULL AND vehicles.vehicle_model != ''
-                    THEN vehicles.vehicle_model
-                  ELSE NULL
-                END,
-                ', '
-              ) AS vehicle_numbers
+      `SELECT
+         customers.id,
+         customers.name,
+         customers.phone,
+         customers.address,
+         customers.created_at,
+         COALESCE(veh.vehicle_numbers, '') AS vehicle_numbers,
+         COALESCE(inv.total_invoices, 0) AS total_invoices,
+         COALESCE(inv.total_spent, 0) AS total_spent,
+         COALESCE(inv.balance_due, 0) AS balance_due
        FROM customers
-       LEFT JOIN vehicles ON vehicles.customer_id = customers.id
+       LEFT JOIN (
+         SELECT
+           customer_id,
+           STRING_AGG(
+             CASE
+               WHEN vehicle_number IS NOT NULL AND vehicle_number != '' AND vehicle_model IS NOT NULL AND vehicle_model != ''
+                 THEN vehicle_number || ' (' || vehicle_model || ')'
+               WHEN vehicle_number IS NOT NULL AND vehicle_number != ''
+                 THEN vehicle_number
+               WHEN vehicle_model IS NOT NULL AND vehicle_model != ''
+                 THEN vehicle_model
+               ELSE NULL
+             END,
+             ', '
+           ) AS vehicle_numbers
+         FROM vehicles
+         GROUP BY customer_id
+       ) veh ON veh.customer_id = customers.id
+       LEFT JOIN (
+         SELECT
+           customer_id,
+           COUNT(*)::int AS total_invoices,
+           COALESCE(SUM(total_amount), 0)::float AS total_spent,
+           COALESCE(SUM(GREATEST(0, total_amount - paid_amount)), 0)::float AS balance_due
+         FROM invoices
+         GROUP BY customer_id
+       ) inv ON inv.customer_id = customers.id
        ${where}
-       GROUP BY customers.id
-       ORDER BY customers.created_at DESC
+       ORDER BY customers.created_at DESC, customers.id DESC
        LIMIT ? OFFSET ?`
     )
     .all(...whereParams, pageSize, offset);

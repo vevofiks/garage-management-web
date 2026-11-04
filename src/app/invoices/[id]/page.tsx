@@ -1,12 +1,12 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useState, useEffect } from "react";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { PrinterIcon } from "lucide-react";
+import { PrinterIcon, CalendarIcon } from "lucide-react";
 import { apiClient, ApiError } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
 import { formatCurrency, formatDate } from "@/lib/format";
@@ -67,6 +67,14 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
     queryFn: () => apiClient.get<InvoiceDetail>(`/api/invoices/${id}`),
   });
 
+  const [invoiceDate, setInvoiceDate] = useState("");
+
+  useEffect(() => {
+    if (invoice?.created_at) {
+      setInvoiceDate(invoice.created_at.split("T")[0]);
+    }
+  }, [invoice?.created_at]);
+
   const {
     control: itemsControl,
     register: itemsRegister,
@@ -89,10 +97,6 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
     formState: { errors: paymentErrors, isSubmitting: isSavingPayment },
   } = useForm<PaymentFormData>({
     resolver: zodResolver(paymentSchema),
-    // Real defaults (not undefined) so the Payment Method Select is
-    // controlled from the very first render — otherwise its `value` starts
-    // `undefined` and flips to a string once `invoice` loads, which Base UI
-    // (like React) rejects as an uncontrolled-to-controlled switch.
     defaultValues: { paid_amount: 0, payment_method: "cash", payment_method_note: "" },
     values: invoice
       ? {
@@ -144,6 +148,15 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
     onError: (error: ApiError) => toast.error(error.message || "Failed to record payment"),
   });
 
+  const updateDateMutation = useMutation({
+    mutationFn: (newDate: string) => apiClient.patch(`/api/invoices/${id}`, { created_at: newDate }),
+    onSuccess: () => {
+      invalidateInvoice();
+      toast.success("Invoice date updated");
+    },
+    onError: (error: ApiError) => toast.error(error.message || "Failed to update invoice date"),
+  });
+
   if (isLoading || !invoice) {
     return (
       <div className="space-y-6">
@@ -159,7 +172,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
     <div className="mx-auto max-w-4xl space-y-6">
       <PageHeader
         title={`INV-${invoice.id}`}
-        description={formatDate(invoice.created_at)}
+        description={`Created: ${formatDate(invoice.created_at)}`}
         backHref="/invoices"
         backLabel="Back to invoices"
         actions={
@@ -177,12 +190,12 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
 
       <Card>
         <CardHeader>
-          <CardTitle>Customer & Vehicle</CardTitle>
+          <CardTitle>Customer, Vehicle &amp; Date</CardTitle>
         </CardHeader>
-        <CardContent className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
+        <CardContent className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-5">
           <div>
             <div className="text-muted-foreground">Customer</div>
-            <Link href={`/customers/${invoice.customer_id}`} className="hover:underline">
+            <Link href={`/customers/${invoice.customer_id}`} className="hover:underline font-medium text-foreground">
               {invoice.customer_name}
             </Link>
           </div>
@@ -198,10 +211,38 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
             <div className="text-muted-foreground">Vehicle Model</div>
             <div>{invoice.vehicle_model || "—"}</div>
           </div>
+          <div className="space-y-1">
+            <div className="text-muted-foreground flex items-center gap-1">
+              <CalendarIcon className="size-3.5" />
+              <span>Invoice Date</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Input
+                type="date"
+                value={invoiceDate}
+                onChange={(e) => setInvoiceDate(e.target.value)}
+                className="h-8 text-xs font-medium"
+                disabled={updateDateMutation.isPending}
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 text-xs shrink-0"
+                disabled={
+                  updateDateMutation.isPending ||
+                  !invoiceDate ||
+                  invoiceDate === invoice.created_at.split("T")[0]
+                }
+                onClick={() => updateDateMutation.mutate(invoiceDate)}
+              >
+                {updateDateMutation.isPending ? "Saving…" : "Save"}
+              </Button>
+            </div>
+          </div>
           {invoice.notes && (
-            <div className="col-span-2 sm:col-span-4">
-              <div className="text-muted-foreground">Notes</div>
-              <div>{invoice.notes}</div>
+            <div className="col-span-2 sm:col-span-5 border-t pt-3 mt-1">
+              <div className="text-muted-foreground text-xs font-medium">Notes</div>
+              <div className="text-sm mt-0.5">{invoice.notes}</div>
             </div>
           )}
         </CardContent>
@@ -209,22 +250,19 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
 
       <Card>
         <CardHeader>
-          <CardTitle>Items</CardTitle>
+          <CardTitle>Invoice items</CardTitle>
         </CardHeader>
         <CardContent>
-          <form
-            onSubmit={handleItemsSubmit((data) => saveItemsMutation.mutate(data))}
-            className="space-y-4"
-          >
+          <form onSubmit={handleItemsSubmit((data) => saveItemsMutation.mutate(data))} className="space-y-4">
             <InvoiceItemsField
               control={itemsControl}
               register={itemsRegister}
               setValue={setItemsValue}
               errors={itemsErrors}
             />
-            <div className="flex justify-end">
-              <Button type="submit" disabled={isSavingItems}>
-                {isSavingItems ? "Saving…" : "Save Items"}
+            <div className="flex justify-end pt-2">
+              <Button type="submit" disabled={isSavingItems || saveItemsMutation.isPending}>
+                {isSavingItems || saveItemsMutation.isPending ? "Saving…" : "Save Items"}
               </Button>
             </div>
           </form>
@@ -289,7 +327,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                         const method = val as PaymentMethod;
                         setPaymentValue("payment_method", method);
                         if (method === "both") {
-                          const currentPaid = watchPayment("paid_amount") || invoice.total_amount;
+                          const currentPaid = watchPayment("paid_amount") || 0;
                           const half = Math.round((currentPaid / 2) * 100) / 100;
                           const rest = Math.round((currentPaid - half) * 100) / 100;
                           handlePaymentSplitChange(half, rest);
@@ -298,9 +336,9 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                         }
                       }
                     }}
-                    disabled={isSavingPayment}
+                    disabled={isSavingPayment || recordPaymentMutation.isPending}
                   >
-                    <SelectTrigger id="payment_method" className="w-full bg-background font-normal text-muted-foreground data-[state=value]:text-foreground">
+                    <SelectTrigger id="payment_method" className="w-full">
                       <SelectValue>{PAYMENT_METHOD_LABELS[selectedPaymentMethod]}</SelectValue>
                     </SelectTrigger>
                     <SelectContent>
@@ -314,7 +352,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                 </div>
 
                 {selectedPaymentMethod !== "both" && (
-                  <div className="flex flex-col gap-2 relative">
+                  <div className="flex flex-col gap-2">
                     <Label htmlFor="paid_amount">Amount Paid</Label>
                     <Input
                       id="paid_amount"
@@ -323,12 +361,10 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                       {...paymentRegister("paid_amount", {
                         setValueAs: (v) => (v === "" ? 0 : Number(v)),
                       })}
-                      disabled={isSavingPayment}
+                      disabled={isSavingPayment || recordPaymentMutation.isPending}
                     />
                     {paymentErrors.paid_amount && (
-                      <p className="absolute -bottom-5 left-0 text-xs text-destructive">
-                        {paymentErrors.paid_amount.message}
-                      </p>
+                      <p className="text-sm text-destructive">{paymentErrors.paid_amount.message}</p>
                     )}
                   </div>
                 )}
@@ -336,9 +372,9 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                 {selectedPaymentMethod === "both" && (
                   <>
                     <div className="flex flex-col gap-2">
-                      <Label htmlFor="payment_cash_amount">Cash Amount (QAR)</Label>
+                      <Label htmlFor="cash_amount">Cash Amount (QAR)</Label>
                       <Input
-                        id="payment_cash_amount"
+                        id="cash_amount"
                         type="number"
                         step="0.01"
                         placeholder="e.g. 50.00"
@@ -349,13 +385,13 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                             paymentCardAmount
                           )
                         }
-                        disabled={isSavingPayment}
+                        disabled={isSavingPayment || recordPaymentMutation.isPending}
                       />
                     </div>
                     <div className="flex flex-col gap-2">
-                      <Label htmlFor="payment_card_amount">Card Amount (QAR)</Label>
+                      <Label htmlFor="card_amount">Card Amount (QAR)</Label>
                       <Input
-                        id="payment_card_amount"
+                        id="card_amount"
                         type="number"
                         step="0.01"
                         placeholder="e.g. 50.00"
@@ -366,38 +402,35 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                             e.target.value === "" ? "" : Number(e.target.value)
                           )
                         }
-                        disabled={isSavingPayment}
+                        disabled={isSavingPayment || recordPaymentMutation.isPending}
                       />
                     </div>
                   </>
                 )}
 
                 {selectedPaymentMethod === "other" && (
-                  <div className="flex flex-col gap-2 relative">
+                  <div className="flex flex-col gap-2">
                     <Label htmlFor="payment_method_note">Describe it</Label>
                     <Input
                       id="payment_method_note"
                       placeholder="e.g. Half cash, half GPay"
                       {...paymentRegister("payment_method_note")}
-                      disabled={isSavingPayment}
+                      disabled={isSavingPayment || recordPaymentMutation.isPending}
                     />
                     {paymentErrors.payment_method_note && (
-                      <p className="absolute -bottom-5 left-0 text-xs text-destructive">
-                        {paymentErrors.payment_method_note.message}
-                      </p>
+                      <p className="text-sm text-destructive">{paymentErrors.payment_method_note.message}</p>
                     )}
                   </div>
                 )}
               </div>
-
-              <div className="flex justify-between items-center pt-2">
-                {selectedPaymentMethod === "both" ? (
-                  <p className="text-xs text-muted-foreground">
-                    Total Paid: <span className="font-semibold text-foreground">QAR {(watchPayment("paid_amount") || 0).toFixed(2)}</span> ({watchPayment("payment_method_note")})
-                  </p>
-                ) : <div />}
-                <Button type="submit" disabled={isSavingPayment}>
-                  {isSavingPayment ? "Saving…" : "Record Payment"}
+              {selectedPaymentMethod === "both" && (
+                <p className="text-xs text-muted-foreground">
+                  Total Paid: <span className="font-semibold text-foreground">QAR {(watchPayment("paid_amount") || 0).toFixed(2)}</span> ({watchPayment("payment_method_note")})
+                </p>
+              )}
+              <div className="flex justify-end">
+                <Button type="submit" disabled={isSavingPayment || recordPaymentMutation.isPending}>
+                  {isSavingPayment || recordPaymentMutation.isPending ? "Saving…" : "Save Payment"}
                 </Button>
               </div>
             </form>
