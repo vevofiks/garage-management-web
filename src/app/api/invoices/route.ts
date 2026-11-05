@@ -111,7 +111,7 @@ export const POST = withErrorHandling(async (req) => {
     .prepare(
       `SELECT id FROM invoices
        WHERE customer_id = ?
-         AND (vehicle_id = ? OR (vehicle_id IS NULL AND ? IS NULL))
+         AND vehicle_id IS NOT DISTINCT FROM ?
          AND total_amount = ?
          AND paid_amount = ?
          AND payment_method = ?
@@ -119,7 +119,7 @@ export const POST = withErrorHandling(async (req) => {
        ORDER BY id DESC
        LIMIT 1`
     )
-    .get(customer_id, vehicle_id, vehicle_id, totalAmount, paid_amount, payment_method)) as
+    .get(customer_id, vehicle_id, totalAmount, paid_amount, payment_method)) as
     | { id: number }
     | undefined;
 
